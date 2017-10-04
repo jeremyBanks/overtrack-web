@@ -135,18 +135,46 @@ export class GamesGraphComponent implements OnInit {
         // The last-graphed entry for each account.
         const playerLastEntries: GraphableGame[] = players.map(_ => null);
 
-        // Dates on the x-axis, common to all accounts.
-        let xAxisText: string[] = [];
-        let xAxisPoints: number[] = [];
-
         // A looping list of colors to use for different accounts on the graph.
         const colors = ['#c19400', '#7560f2', '#c2004e', '#8ec200', '#008ec2', '#c2008e'];
 
+        // Dates labelled on the x-axis, common to all accounts.
+        const graphableDates: {
+            x: number,
+            specialLabel: string|null
+        }[] = [];
+
         let x = 0;
+        let lastSeason: string = null;
         let lastDate: string = null;
         let lastEntry = null;
         for (const entry of graphable) {
             const {playerIndex, game, connectedToNext} = entry;
+
+            const date: string = this.formatDate(game.startTime);
+            const season: string = this.gamesListService.getSeason(+game.startTime / 1000);
+            if (lastDate != date){
+                if (lastSeason != season) {
+                    if (lastSeason) {
+                        graphableDates.push({
+                            x: x,
+                            specialLabel: null
+                        });
+                        x += 6;
+                    }
+                    graphableDates.push({
+                        x: x,
+                        specialLabel: `<b>${season}</b>`
+                    });
+                } else {
+                    graphableDates.push({
+                        x: x,
+                        specialLabel: null
+                    });
+                }
+            }
+            lastDate = date;
+            lastSeason = season;
 
             const playerLastEntry = playerLastEntries[playerIndex];
 
@@ -179,22 +207,26 @@ export class GamesGraphComponent implements OnInit {
                 playerLineSRs[playerIndex].push(game.endSR);
             }
 
-            const date: string = this.formatDate(entry.game.startTime);
-            if (lastDate != date){
-                xAxisText.push(date);
-                xAxisPoints.push(x);
-                lastDate = date;
-            }
-
             x++;
             playerLastEntries[playerIndex] = entry;
             lastEntry = entry;
         }
 
-        // Sample the number of X axis tick values (i.e. dates) to be around 15
-        let nInM = Math.max(1, Math.round(xAxisText.length / 14))
-        xAxisText = xAxisText.filter((e, i) => i % nInM == 0)
-        xAxisPoints = xAxisPoints.filter((e, i) => i % nInM == 0)
+        graphableDates.push({
+            x: x,
+            specialLabel: null
+        });
+
+        const xAxisText: string[] = [];
+        const xAxisPoints: number[] = [];
+
+        const removeableDates = graphableDates.filter(d => d.specialLabel == null);
+        const unremoveableDates = graphableDates.length - removeableDates.length;
+
+        for (const g of graphableDates) {
+            xAxisPoints.push(g.x);
+            xAxisText.push(g.specialLabel || '');
+        }
 
         // List of data series for Plotly.
         const data: any[] = [];
@@ -267,15 +299,22 @@ export class GamesGraphComponent implements OnInit {
 
                 ticks: '',
                 showgrid: true,
-                gridcolor: 'rgba(0, 0, 0, 0.2)',
                 zeroline: false,
+
                 fixedrange: false,
-                range: [intitialLeft, initialRight]
+                range: [intitialLeft, initialRight],
+
+                gridcolor: 'rgba(0, 0, 0, 0.15)',
+
+                align: 'left'
             },
             yaxis: {
                 fixedrange: true,
-                nticks: 3,
-                side: 'right'
+                dtick: 250,
+                side: 'right',
+                
+                gridcolor: 'rgba(255, 255, 255, 0.15)',
+                gridwidth: 2
             },
             overlaying: false,
             margin: {
