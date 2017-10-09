@@ -280,6 +280,7 @@ export class GamesGraphComponent implements OnInit {
         let lastEntry = null;
         for (const entry of graphable) {
             const {sr, playerIndex, game, connectedToNext} = entry;
+            let spaced = false;
 
             const date: string = this.formatDate(game.startTime);
             const season: string = this.gamesListService.getSeason(+game.startTime / 1000);
@@ -291,6 +292,7 @@ export class GamesGraphComponent implements OnInit {
                             specialLabel: null
                         });
                         x += 6;
+                        spaced = true;
                     }
                     graphableDates.push({
                         x: x,
@@ -310,7 +312,7 @@ export class GamesGraphComponent implements OnInit {
 
             if (playerLastEntry) {
                 if ("connect everything" || playerLastEntry.connectedToNext) {
-                    if (playerLastEntry != lastEntry) {
+                    if (playerLastEntry != lastEntry || spaced) {
                         playerLineXs[playerIndex].push(x - 1);
                         playerLineSRs[playerIndex].push(playerLastEntry.sr);
                     }
@@ -342,6 +344,7 @@ export class GamesGraphComponent implements OnInit {
             lastEntry = entry;
         }
 
+        // extend each line out past the end of the graph
         for (let i = players.length - 1; i >= 0; i--) {
             const playerLastEntry = playerLastEntries[i];
             playerLineXs[i].push(x + 8);
@@ -367,9 +370,36 @@ export class GamesGraphComponent implements OnInit {
         // List of data series for Plotly.
         const data: any[] = [];
 
-        // We need to specify the series in the order we want them drawn:
-        // lines under dots, then least-recent accounts under more-recent.
         let colorIndex = 0;
+        for (let i = players.length - 1; i >= 0; i--) {
+            if (playerLineXs[i].length < 2){
+                continue;
+            }
+            const color = colors[colorIndex % colors.length];
+            const dimColor = dimColors[colorIndex % dimColors.length];
+            colorIndex++;
+
+            // We need to put out-of-bounds dots for each player first
+            // in the series to ensure we get their standard color in the legend,
+            // even if the first dot has a special color (perhaps because it has estimated SR).
+            
+            data.push({
+                name: players[i],
+                legendgroup: players[i],
+                x: [-10, ...playerDotXs[i]],
+                y: [playerDotSRs[i][0], ...playerDotSRs[i]],
+                overtrackGames: [null, ...playerDotGames[i]],
+                text: ['', ...playerDotLabels[i]],
+                mode: 'markers',
+                hoverinfo: 'y+text',
+                marker: {
+                    size: 8,
+                    color: [color, ...(playerDotGames[i].map(game => game.endSR ? 'black' : 'black'))]
+                }
+            });
+        }
+
+        colorIndex = 0;
         for (let i = players.length - 1; i >= 0; i--) {
             if (playerLineXs[i].length < 2){
                 continue;
@@ -388,32 +418,6 @@ export class GamesGraphComponent implements OnInit {
                     color: color,
                 }
             });
-        }
-
-        colorIndex = 0;
-        for (let i = players.length - 1; i >= 0; i--) {
-            if (playerLineXs[i].length < 2){
-                continue;
-            }
-            const color = colors[colorIndex % colors.length];
-            const dimColor = dimColors[colorIndex % dimColors.length];
-            colorIndex++;
-
-            data.push({
-                name: players[i],
-                legendgroup: players[i],
-                x: playerDotXs[i],
-                y: playerDotSRs[i],
-                overtrackGames: playerDotGames[i],
-                text: playerDotLabels[i],
-                mode: 'markers',
-                hoverinfo: 'y+text',
-                marker: {
-                    size: 6,
-                    color: playerDotGames[i].map(game => game.endSR ? color : dimColor)
-                }
-            });
-            
         }
 
         // We should probably reference this element in a more Angular way.
