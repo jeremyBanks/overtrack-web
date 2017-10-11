@@ -176,7 +176,7 @@ export class GamesGraphComponent implements OnInit {
             playerDotGames[playerIndex].push(game);
             playerDotLabels[playerIndex].push(this.formatLabel(game));
 
-            if (graphable.length <= 128 && game.heroes && game.heroes.length) {
+            if (game.heroes && game.heroes.length) {
                 gameHeroImages.push({
                     source: `/assets/images/heroes/${game.heroes[0].name}.png`,
                     xref: 'x',
@@ -346,49 +346,86 @@ export class GamesGraphComponent implements OnInit {
         const minLeft = -1;
         const maxRight = initialRight;
         const maxRange = maxRight - minLeft;
-        (plotEl as any).on('plotly_relayout', eventdata => {  
+
+        let updateInProgress = false;
+        let pendingUpdate = null;
+        const stopEvent = (event:Event) => {
+            event.stopPropagation();
+            event.preventDefault();
+        };
+
+        (plotEl as any).on('plotly_relayout', async (eventdata) => {  
             // prevent the user panning/zooming outside the range of games played
+
             let eventSource = 'user';
             if (eventdata['source']){
                 eventSource = eventdata['source'];
             }
 
+            if (eventSource != 'user') {
+                return;
+            }
+
             let left: number = eventdata['xaxis.range[0]'];
             let right: number = eventdata['xaxis.range[1]'];
+
             if (right != undefined && left != undefined){
-                let range = right - left;
+                const doUpdate = async () => {
+                    clearTimeout(pendingUpdate);
+                    updateInProgress = true;
 
-                if (range > maxRange) {
-                    const excess = range - maxRange;
-                    range = maxRange;
-                    left += excess / 2;
-                    right -= excess / 2;
-                }
+                    plotEl.style.backgroundColor = 'red';
+                    (plotEl.querySelector('.draglayer') as HTMLElement).style.display = 'none';
 
-                if (left < minLeft) {
-                    left = minLeft;
-                    right = left + range;
-                } else if (right > maxRight) {
-                    right = maxRight;
-                    left = right - range;
-                }
+                    let range = right - left;
 
-                if (eventSource == 'user'){
+                    if (range > maxRange) {
+                        const excess = range - maxRange;
+                        range = maxRange;
+                        left += excess / 2;
+                        right -= excess / 2;
+                    }
+
+                    if (left < minLeft) {
+                        left = minLeft;
+                        right = left + range;
+                    } else if (right > maxRight) {
+                        right = maxRight;
+                        left = right - range;
+                    }
 
                     let visibleImages = gameHeroImages.filter(e => left < e.x && e.x < right);
                     if (visibleImages.length > 75){
                         visibleImages = [];
                     }
 
-                    Plotly.relayout(plotEl, {
+                    await Plotly.relayout(plotEl, {
                         'source': 'constrainZoom',
                         'xaxis.range[0]': left,
                         'xaxis.range[1]': right,
                         'images': visibleImages
                     });
-                    Plotly.redraw(plotEl);
 
-                    $('.imagelayer').children().height(30);
+                    await Plotly.redraw(plotEl);
+
+                    $('.imagelayer', plotEl).children().height(30);
+
+                    // and block events for an additional half-second
+                    await new Promise(r => setTimeout(r, 500));
+
+                    updateInProgress = false;
+                    plotEl.style.backgroundColor = '';
+                    (plotEl.querySelector('.draglayer') as HTMLElement).style.display = 'block';
+                };
+
+                if (updateInProgress) {
+                    console.error("unexpected user relayout in the middle of updating");
+                } else {
+                    if (pendingUpdate) {
+                        clearTimeout(pendingUpdate);
+                    }
+                    // debounce by one second
+                    pendingUpdate = setTimeout(doUpdate, 1000);
                 }
             }
         });
