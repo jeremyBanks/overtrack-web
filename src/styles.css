@@ -782,3 +782,34 @@ svg .timeline-event:hover {
 svg {
     overflow: visible !important;
 }
+
+
+games-graph #sr-graph svg .game-hover {
+    box-sizing: border-box;
+    margin-top: 80px;
+    margin-left: 5px;
+    width: 256px;
+    height: 64px;
+    color: white;
+    background: #222;
+    border: 1px solid white;
+    padding: 4px;
+    text-align: center;
+}
+
+games-graph #sr-graph svg .game-hover .heading {
+    font-weight: bold;
+}
+
+games-graph #sr-graph svg .game-hover :not(.heading) {
+    color: white;
+}
+
+games-graph #sr-graph svg .game-hover .played {
+    display: inline-block;
+    margin-right: 1em;
+}
+
+games-graph #sr-graph svg .game-hover .played img {
+    height: 32px;
+}

@@ -4,6 +4,8 @@ import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { GamesListService, PlayerGameList } from '../games-list/games-list.service';
 import { Game } from '../game/game.service';
 
+import { HTML } from '../util/html';
+
 
 declare var Plotly: any;
 
@@ -483,6 +485,45 @@ export class GamesGraphComponent implements OnInit {
         };
 
         Plotly.newPlot(plotEl, data, layout, config);
+        
+        (plotEl as any).on('plotly_hover', data => {
+            if (data.points.length != 1) {
+                return;
+            }
+            if (!data.points[0].data.overtrackGames) {
+                return;
+            }
+
+            const color = data.points[0].data.marker.color;
+
+            const game:Game = data.points[0].data.overtrackGames[data.points[0].pointNumber];
+            
+            const label = plotEl.querySelector('g.hovertext') as SVGGElement;
+            
+            if (label) {
+                for (const el of Array.from(label.childNodes)) {
+                    // (el as any).style.display = 'none';
+                }
+
+                console.log(game.heroes);
+                let html = (label.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'foreignObject') as any) as SVGForeignObjectElement;
+                html.setAttribute('x', '0');
+                html.setAttribute('y', '-100');
+                html.setAttribute('width', '512');
+                html.setAttribute('height', '512');
+                html.innerHTML = HTML.string`<body xmlns="http://www.w3.org/1999/xhtml">
+                    <div class="game-hover" style="color: ${color}">
+                        <div class="heading">${game.result} on ${game.map}</div>
+                        ${game.heroes.slice(0, 3).map(hero => HTML`<div class="played">
+                            ${Math.floor(hero.percentagePlayed * 100)}% <img src="/assets/images/heroes/${hero.name}.png" />
+                        </div>`)}
+                    </div>
+                </body>`;
+                
+                label.appendChild(html);
+                console.log(html);
+            }
+        });
 
         (plotEl as any).on('plotly_click', data => {
             if (data.points.length != 1) {
