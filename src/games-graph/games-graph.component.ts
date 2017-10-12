@@ -1,8 +1,11 @@
 import { Component, OnInit, Input } from '@angular/core';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 
+import { GamesListComponent } from '../games-list/games-list.component';
 import { GamesListService, PlayerGameList } from '../games-list/games-list.service';
 import { Game } from '../game/game.service';
+
+import { HTML } from '../util/html';
 
 
 declare var Plotly: any;
@@ -306,6 +309,56 @@ export class GamesGraphComponent implements OnInit {
         };
 
         Plotly.newPlot(plotEl, data, layout, config);
+        
+        (plotEl as any).on('plotly_hover', data => {
+            if (data.points.length != 1) {
+                return;
+            }
+            if (!data.points[0].data.overtrackGames) {
+                return;
+            }
+
+            const color = data.points[0].data.marker.color;
+            const markerSize = data.points[0].data.marker.size;
+
+            const game:Game = data.points[0].data.overtrackGames[data.points[0].pointNumber];
+            
+            const label = plotEl.querySelector('g.hovertext') as SVGGElement;
+            
+            if (label) {
+                for (const el of Array.from(label.childNodes)) {
+                    (el as any).style.display = 'none';
+                }
+
+                console.log('game = ', game);
+                let html = (label.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'foreignObject') as any) as SVGForeignObjectElement;
+                html.setAttribute('x', String(-256 - markerSize / 2));
+                html.setAttribute('y', String(-256 + markerSize));
+                html.setAttribute('width', '512');
+                html.setAttribute('height', '512');
+                html.appendChild(HTML.element`<body xmlns="http://www.w3.org/1999/xhtml">
+                    <div class="game-hover" style="color: ${color}">
+                        <div class="game-pointer"></div>
+                        <div class="game-bar"></div>
+                        <div class="game-card">
+                            <div>
+                                ${game.result}
+                            </div>
+                            <div>${game.map}</div>
+                            <div>
+                                ${(game.rank != 'placement' || game.endSR) ? HTML`<img src="assets/images/icons/${ GamesListComponent.prototype.rank(game.endSR) }.png"/><span>${ GamesListComponent.prototype.formatSR(game) }</span>` : ''}
+                                ${game.heroes.slice(0, 3).map(hero => 
+                                    HTML`<img src="/assets/images/heroes/${hero.name}.png" />`
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </body>`);
+                
+                label.appendChild(html);
+                console.log(html);
+            }
+        });
 
         (plotEl as any).on('plotly_click', data => {
             if (data.points.length != 1) {
