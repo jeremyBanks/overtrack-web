@@ -74,7 +74,7 @@ export class GamesGraphComponent implements OnInit {
     }
 
     formatLabel(game: Game) {
-        return game.result + ' - ' + game.map;
+        return (!game.endSR ? "[UNKNOWN SR, ESTIMATED]<br>" : "") + game.result + ' - ' + game.map;
     }
 
     graphableGamesLists(gameLists: Array<PlayerGameList>){
@@ -84,13 +84,132 @@ export class GamesGraphComponent implements OnInit {
         return gameLists.filter(gameList => gameList.list.filter(game => game.endSR != null).length >= 2);
     }
 
+    // Attaches an estimated SR to each game.
+    fillUnknownSRs(games: Game[]): { game: Game, sr: number }[] {
+        const srPerMatch = 25;
+        const g = games[0];
+        const delta = (r: typeof g.result) => {
+            if (r == 'WIN') {
+                return +srPerMatch;
+            } else if (r == 'LOSS') {
+                return -srPerMatch
+            } else if (r == 'DRAW') {
+                return 0;
+            } else {
+                return NaN;
+            }
+        }
+
+        const filled = games.map(game => ({game: game, sr: game.endSR || null}));
+
+        // If we have a startSR and a result, use that to predict the end SR.
+        for (const entry of filled) {
+            if (!entry.sr) {
+                if (entry.game.startSR) {
+                    const result = entry.game.startSR + delta(entry.game.result);
+                    if (!isNaN(result)) {
+                        entry.sr = result;
+                    }
+                }
+            }
+        }
+
+        // If the next game has a startSR, use that for the current end SR.
+        let previous: typeof filled[0] = null;
+        for (const entry of filled) {
+            if (previous && !previous.sr) {
+                if (entry.game.startSR) {
+                    previous.sr = entry.game.startSR;
+                }
+            }
+
+            previous = entry;
+        }
+
+        const unknownSegments: {
+            // the anchoring start and end SRs, if known.
+            start: number|null,
+            end: number|null,
+            games: (typeof filled)[], // multiple games together are ties, merged for this
+        }[] = [];
+
+        let lastEntry: typeof filled[0] = null;
+        let currentSegment: typeof unknownSegments[0] = null;
+
+        for (const entry of filled) {
+            if (currentSegment) {
+                if (entry.sr) {
+                    // end the current segment
+                    currentSegment.end = entry.game.startSR || entry.sr - (delta(entry.game.result) || 0);
+                    currentSegment = null;
+                } else {
+                    // continue current segment
+                    if (entry.game.result == 'DRAW') {
+                        // group with previous game
+                        currentSegment.games[currentSegment.games.length - 1].push(entry);
+                    } else {
+                        // append on its own
+                        currentSegment.games.push([entry]);
+                    }
+                }
+            } else {
+                if (entry.sr) {
+                    // carry on between segments
+                } else {
+                    // start new segment
+                    currentSegment = {
+                        start: lastEntry && lastEntry.sr || null,
+                        end: null,
+                        games: [[entry]]
+                    }
+                    unknownSegments.push(currentSegment);
+                }
+            }
+            lastEntry = entry;
+        }
+        
+        for (const unknown of unknownSegments) {
+            let naturalTotalDelta = 0;
+            for (const entry of unknown.games) {
+                naturalTotalDelta += delta(entry[0].game.result) || 0;
+            }
+
+            let totalDelta = naturalTotalDelta;
+            let fakeDeltaEach = 0;
+            if (unknown.start && unknown.end) {
+                totalDelta = unknown.end - unknown.start;
+                fakeDeltaEach = (totalDelta - naturalTotalDelta) / (unknown.games.length + 1);
+            }
+
+            if (!unknown.start) {
+                if (unknown.end) {
+                    unknown.start = unknown.end - totalDelta;
+                } else {
+                    // we have absolutely no idea what SR this player is at, so let's put them at the average:
+                    unknown.start = 2225;
+                }
+            }
+
+            let sr = unknown.start;
+            for (const entry of unknown.games) {
+                sr += (delta(entry[0].game.result) || 0) + fakeDeltaEach;
+                for (const e of entry) {
+                    e.sr = Math.floor(sr);
+                }
+            }
+        }
+
+        return filled;
+    }
+
     renderGraph(gameLists: PlayerGameList[]): void {
         const players = gameLists.map(l => l.player);
 
         type GraphableGame = {
             game: Game,
             playerIndex: number,
-            connectedToNext: boolean
+            connectedToNext: boolean,
+            sr: number
         };
 
         // All graphable games and their continuity in a single flattened sorted list.
@@ -99,19 +218,20 @@ export class GamesGraphComponent implements OnInit {
         for (const gamesList of gameLists) {
             let lastEntry: GraphableGame = null;
             const playerIndex = players.indexOf(gamesList.player);
-            for (const game of Array.from(gamesList.list).reverse()) {
+            for (const {game, sr} of this.fillUnknownSRs(Array.from(gamesList.list).reverse())) {
                 const entry = {
+                    sr: sr,
                     game: game,
                     playerIndex: playerIndex,
                     connectedToNext: false
                 };
 
-                if (game.endSR && game.startTime) {
+                if (sr) {
                     graphable.push(entry);
 
                     // We're connected if the previous game has an end SR and
                     // the current game's start SR matches that end SR or is unknown.
-                    if (lastEntry && (game.startSR == null || game.startSR == lastEntry.game.endSR)) {
+                    if (game.endSR && lastEntry && lastEntry.game.endSR && (game.startSR == null || game.startSR == lastEntry.game.endSR)) {
                         lastEntry.connectedToNext = true;
                     }
                 }
@@ -135,26 +255,62 @@ export class GamesGraphComponent implements OnInit {
         // The last-graphed entry for each account.
         const playerLastEntries: GraphableGame[] = players.map(_ => null);
 
-        // Dates on the x-axis, common to all accounts.
-        let xAxisText: string[] = [];
-        let xAxisPoints: number[] = [];
-
         // A looping list of colors to use for different accounts on the graph.
-        const colors = ['#c19400', '#7560f2', '#c2004e', '#8ec200', '#008ec2', '#c2008e'];
+        const colors = [
+            'rgba(255, 193, 0, 1)',
+            'rgba(117, 96, 242, 1)',
+            'rgba(194, 92, 78, 1)',
+            'rgba(142, 194, 0, 1)',
+            'rgba(0, 142, 194, 1)',
+            'rgba(194, 0, 142, 1)'
+        ];
+        const dimColors = colors.map(c => 'rgba(255, 255, 255, 0.25)');
+
+        // Dates labelled on the x-axis, common to all accounts.
+        const graphableDates: {
+            x: number,
+            specialLabel: string|null
+        }[] = [];
 
         let x = 0;
+        let lastSeason: string = null;
         let lastDate: string = null;
         let lastEntry = null;
         for (const entry of graphable) {
-            const {playerIndex, game, connectedToNext} = entry;
+            const {sr, playerIndex, game, connectedToNext} = entry;
+
+            const date: string = this.formatDate(game.startTime);
+            const season: string = this.gamesListService.getSeason(+game.startTime / 1000);
+            if (lastDate != date){
+                if (lastSeason != season) {
+                    if (lastSeason) {
+                        graphableDates.push({
+                            x: x,
+                            specialLabel: null
+                        });
+                        x += 6;
+                    }
+                    graphableDates.push({
+                        x: x,
+                        specialLabel: `<b>${season}</b>`
+                    });
+                } else {
+                    graphableDates.push({
+                        x: x,
+                        specialLabel: null
+                    });
+                }
+            }
+            lastDate = date;
+            lastSeason = season;
 
             const playerLastEntry = playerLastEntries[playerIndex];
 
             if (playerLastEntry) {
-                if (playerLastEntry.connectedToNext) {
+                if ("connect everything" || playerLastEntry.connectedToNext) {
                     if (playerLastEntry != lastEntry) {
                         playerLineXs[playerIndex].push(x - 1);
-                        playerLineSRs[playerIndex].push(playerLastEntry.game.endSR);
+                        playerLineSRs[playerIndex].push(playerLastEntry.sr);
                     }
                 } else {
                     playerLineXs[playerIndex].push(x);
@@ -169,21 +325,14 @@ export class GamesGraphComponent implements OnInit {
             }
 
             playerDotXs[playerIndex].push(x);
-            playerDotSRs[playerIndex].push(game.endSR);
+            playerDotSRs[playerIndex].push(sr);
             playerDotGames[playerIndex].push(game);
             playerDotLabels[playerIndex].push(this.formatLabel(game));
 
-            if ((playerLastEntry && playerLastEntry.connectedToNext) || connectedToNext) {
+            if ((playerLastEntry && ("connect everything" || playerLastEntry.connectedToNext)) || ("connect everything" || connectedToNext)) {
                 playerLineXs[playerIndex].push(x);
                 allXs.push(x);
-                playerLineSRs[playerIndex].push(game.endSR);
-            }
-
-            const date: string = this.formatDate(entry.game.startTime);
-            if (lastDate != date){
-                xAxisText.push(date);
-                xAxisPoints.push(x);
-                lastDate = date;
+                playerLineSRs[playerIndex].push(sr);
             }
 
             x++;
@@ -191,10 +340,27 @@ export class GamesGraphComponent implements OnInit {
             lastEntry = entry;
         }
 
-        // Sample the number of X axis tick values (i.e. dates) to be around 15
-        let nInM = Math.max(1, Math.round(xAxisText.length / 14))
-        xAxisText = xAxisText.filter((e, i) => i % nInM == 0)
-        xAxisPoints = xAxisPoints.filter((e, i) => i % nInM == 0)
+        for (let i = players.length - 1; i >= 0; i--) {
+            const playerLastEntry = playerLastEntries[i];
+            playerLineXs[i].push(x + 8);
+            playerLineSRs[i].push(playerLastEntry.sr);
+        }
+
+        graphableDates.push({
+            x: x,
+            specialLabel: null
+        });
+
+        const xAxisText: string[] = [];
+        const xAxisPoints: number[] = [];
+
+        const removeableDates = graphableDates.filter(d => d.specialLabel == null);
+        const unremoveableDates = graphableDates.length - removeableDates.length;
+
+        for (const g of graphableDates) {
+            xAxisPoints.push(g.x);
+            xAxisText.push(g.specialLabel || '');
+        }
 
         // List of data series for Plotly.
         const data: any[] = [];
@@ -216,7 +382,8 @@ export class GamesGraphComponent implements OnInit {
                 mode: 'lines',
                 hoverinfo: 'skip',
                 line: {
-                    color: color
+                    width: 2,
+                    color: color,
                 }
             });
         }
@@ -226,7 +393,10 @@ export class GamesGraphComponent implements OnInit {
             if (playerLineXs[i].length < 2){
                 continue;
             }
-            const color = colors[colorIndex++ % colors.length];
+            const color = colors[colorIndex % colors.length];
+            const dimColor = dimColors[colorIndex % dimColors.length];
+            colorIndex++;
+
             data.push({
                 name: players[i],
                 legendgroup: players[i],
@@ -238,7 +408,7 @@ export class GamesGraphComponent implements OnInit {
                 hoverinfo: 'y+text',
                 marker: {
                     size: 6,
-                    color: color,
+                    color: playerDotGames[i].map(game => game.endSR ? color : dimColor)
                 }
             });
             
@@ -267,15 +437,22 @@ export class GamesGraphComponent implements OnInit {
 
                 ticks: '',
                 showgrid: true,
-                gridcolor: 'rgba(0, 0, 0, 0.2)',
                 zeroline: false,
+
                 fixedrange: false,
-                range: [intitialLeft, initialRight]
+                range: [intitialLeft, initialRight],
+
+                gridcolor: 'rgba(0, 0, 0, 0.15)',
+
+                align: 'left'
             },
             yaxis: {
                 fixedrange: true,
-                nticks: 3,
-                side: 'right'
+                dtick: 250,
+                side: 'right',
+                
+                gridcolor: 'rgba(255, 255, 255, 0.15)',
+                gridwidth: 2
             },
             overlaying: false,
             margin: {
