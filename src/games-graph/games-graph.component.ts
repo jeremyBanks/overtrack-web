@@ -267,7 +267,7 @@ export class GamesGraphComponent implements OnInit {
             'rgba(0, 142, 194, 1)',
             'rgba(194, 0, 142, 1)'
         ];
-        const dimColors = colors.map(c => 'rgba(255, 255, 255, 0.25)');
+        const dimColors = colors.map(c => 'rgba(128, 128, 128, 1)');
 
         // Dates labelled on the x-axis, common to all accounts.
         const graphableDates: {
@@ -348,7 +348,7 @@ export class GamesGraphComponent implements OnInit {
         // extend each line out past the end of the graph
         for (let i = players.length - 1; i >= 0; i--) {
             const playerLastEntry = playerLastEntries[i];
-            playerLineXs[i].push(x + 8);
+            playerLineXs[i].push(x + 2048);
             playerLineSRs[i].push(playerLastEntry.sr);
         }
 
@@ -387,7 +387,7 @@ export class GamesGraphComponent implements OnInit {
             data.push({
                 name: players[i],
                 legendgroup: players[i],
-                x: [-10, ...playerDotXs[i]],
+                x: [-2048, ...playerDotXs[i]],
                 y: [playerDotSRs[i][0], ...playerDotSRs[i]],
                 overtrackGames: [null, ...playerDotGames[i]],
                 text: ['', ...playerDotLabels[i]],
@@ -395,7 +395,7 @@ export class GamesGraphComponent implements OnInit {
                 hoverinfo: 'y+text',
                 marker: {
                     size: 8,
-                    color: [color, ...(playerDotGames[i].map(game => game.endSR ? 'black' : 'black'))]
+                    color: [color, ...(playerDotGames[i].map(game => game.endSR ? color.replace('1)', '0.5)') : dimColor.replace('1)', '0.5)')))]
                 }
             });
         }
@@ -426,7 +426,7 @@ export class GamesGraphComponent implements OnInit {
 
         // set the initial zoom to include the last 100 games
         let intitialLeft = allXs[Math.max(allXs.length - 100, 0)] - 0.5;
-        let initialRight = allXs[allXs.length - 1] + 1;
+        let initialRight = allXs[allXs.length - 1] + 2;
 
         const layout = {
             title: '',
