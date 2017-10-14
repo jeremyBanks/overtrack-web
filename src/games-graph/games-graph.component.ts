@@ -490,6 +490,58 @@ export class GamesGraphComponent implements OnInit {
         };
 
         Plotly.newPlot(plotEl, data, layout, config);
+
+        const minLeft = -1;
+        const maxRight = initialRight;
+        const maxRange = maxRight - minLeft;
+
+        const constrainZoom = (left: number, right: number) => {
+            let range = right - left;
+
+            if (range > maxRange) {
+                const excess = range - maxRange;
+                range = maxRange;
+                left += excess / 2;
+                right -= excess / 2;
+            }
+
+            if (left < minLeft) {
+                left = minLeft;
+                right = left + range;
+            } else if (right > maxRight) {
+                right = maxRight;
+                left = right - range;
+            }
+
+            let minSr = +Infinity, maxSr = -Infinity;
+            for (let playerIndex = 0; playerIndex < players.length; playerIndex++) {
+                for (let lineIndex = 0; lineIndex < playerDotXs[playerIndex].length; lineIndex++) {
+                    const x = playerDotXs[playerIndex][lineIndex];
+                    if (x >= left && x <= right) {
+                        const sr = playerDotSRs[playerIndex][lineIndex];
+                        if (sr && sr < minSr) {
+                            minSr = sr;
+                        }
+                        if (sr && sr > maxSr) {
+                            maxSr = sr;
+                        }
+                    }
+                }
+            }
+
+            if (minSr == Infinity) {
+                minSr = 1000;
+                maxSr = 3000;
+            }
+
+            Plotly.relayout(plotEl, {
+                'source': 'constrainZoom',
+                'xaxis.range': [left, right],
+                'yaxis.range': [minSr - 30, maxSr + 30],
+            });
+        };
+
+        constrainZoom(intitialLeft, initialRight);
         
         (plotEl as any).on('plotly_hover', data => {
             if (data.points.length != 1) {
@@ -559,9 +611,6 @@ export class GamesGraphComponent implements OnInit {
             }
         });
 
-        const minLeft = -1;
-        const maxRight = initialRight;
-        const maxRange = maxRight - minLeft;
         (plotEl as any).on('plotly_relayout', eventdata => {  
 
             // prevent the user panning/zooming outside the range of games played
@@ -572,31 +621,8 @@ export class GamesGraphComponent implements OnInit {
 
             let left: number = eventdata['xaxis.range[0]'];
             let right: number = eventdata['xaxis.range[1]'];
-            if (right != undefined && left != undefined){
-                let range = right - left;
-
-                if (range > maxRange) {
-                    const excess = range - maxRange;
-                    range = maxRange;
-                    left += excess / 2;
-                    right -= excess / 2;
-                }
-
-                if (left < minLeft) {
-                    left = minLeft;
-                    right = left + range;
-                } else if (right > maxRight) {
-                    right = maxRight;
-                    left = right - range;
-                }
-
-                if (eventSource == 'user'){
-                    Plotly.relayout(plotEl, {
-                        'source': 'constrainZoom',
-                        'xaxis.range[0]': left,
-                        'xaxis.range[1]': right,
-                    });
-                }
+            if (eventSource == 'user' && right != undefined && left != undefined) {
+                constrainZoom(left, right);
             }
         });
     }
