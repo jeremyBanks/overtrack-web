@@ -580,9 +580,9 @@ export class GamesGraphComponent implements OnInit {
                             <div>${game.map}</div>
                             <div>
                                 ${(game.rank != 'placement' || game.endSR) ? HTML`<img src="assets/images/icons/${ GamesListComponent.prototype.rank(game.endSR) }.png"/><span>${ GamesListComponent.prototype.formatSR(game) }</span>` : ''}
-                                ${game.heroes.slice(0, 3).map(hero => 
+                                ${game.heroes && game.heroes.slice(0, 3).map(hero => 
                                     HTML`<img src="/assets/images/heroes/${hero.name}.png" />`
-                                )}
+                                ) || ''}
                             </div>
                         </div>
                     </div>
