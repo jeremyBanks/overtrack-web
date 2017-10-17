@@ -541,6 +541,35 @@ export class GamesGraphComponent implements OnInit {
                 ...getLayout(left, right, enabledTraces)
             });
         });
+
+        plotlyElement.on('overtrack_set_range', eventData => {
+            const enabledTraces: Array<string> = plotlyElement.data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
+            
+            let games = allGames;
+
+            const getGameSeason = (game: FullyAnnotatedGame) => this.gamesListService.getSeason(+game.date / 1000);
+
+            if (eventData['season'] == 'current') {
+                const latestSeason = getGameSeason(games[games.length - 1]);
+                games = games.filter(game => getGameSeason(game) == latestSeason);
+            }
+
+            if (eventData['last']) {
+                games = games.slice(-eventData['last']);
+            }
+
+            const left = games[0].x - 0.5;
+            const right = games[games.length - 1].x + 0.5;
+
+            Plotly.relayout(plotlyElement, {
+                source: 'constrainZoom',
+                ...getLayout(left, right, enabledTraces)
+            });
+        });
+    }
+
+    userSetRange(opts = {}) {
+        (document.getElementById('sr-graph') as any).emit('overtrack_set_range', opts);
     }
     
     // Attaches an estimated SR to games with unknown SR, where possible.

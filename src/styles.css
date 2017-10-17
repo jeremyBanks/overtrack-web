@@ -791,3 +791,24 @@ svg {
 #sr-graph.point-hovered .draglayer rect {
     cursor: pointer;
 }
+
+.range-controls {
+    z-index: 1000;
+    position: absolute;
+    right: 46px;
+    top: 64px;
+}
+
+.range-controls span {
+    display: inline-block;
+    text-transform: uppercase;
+    color: #888;
+    padding: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+}
+
+.range-controls span:hover {
+    color: goldenrod;
+}
