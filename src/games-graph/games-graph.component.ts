@@ -82,7 +82,14 @@ export class GamesGraphComponent implements OnInit {
         return gameLists.filter(gameList => gameList.list.filter(game => game.endSR != null).length >= 2);
     }
 
-renderGraph(gameLists: PlayerGameList[]): void {
+    compareGamesChronologically(a: Game, b: Game): number {
+        // We add other sort keys to get deterministic results even when
+        // multiple games have the same startTime, which has previously
+        // happened as a result of errors.
+        return (+a.startTime - +b.startTime) || (a.duration - b.duration) || (a.key > b.key ? +1 : -1);
+    }
+
+    renderGraph(gameLists: PlayerGameList[]): void {
         // A looping list of colors to use for different accounts on the graph.
         // These must be rgba definitions ending in ', 1)' to allow opacity replacement below.
         const colors = [
@@ -97,15 +104,17 @@ renderGraph(gameLists: PlayerGameList[]): void {
         // The number of recent games to show initially.
         const initialGamesVisible = 100;
 
+        console.log('gamelists', gameLists);
+
         // Data for each game, for each player.
         const unfilteredGames = gameLists.map(x => ({
             player: x.player,
-            games: x.list.slice().reverse().map(data => ({
+            games: x.list.slice().map(data => ({
                 data: data,
                 date: data.startTime,
                 sr: data.endSR || null,
                 srWasUnknownReason: (data.endSR ? null : data.rank == 'placement' ? 'placement' : 'error') as SRUnknownReason
-            }))
+            })).sort((a, b) => this.compareGamesChronologically(a.data, b.data))
         }));
 
         // Estimate SR when possible for games that are missing it.
@@ -133,8 +142,10 @@ renderGraph(gameLists: PlayerGameList[]): void {
             ...game
         })));
 
+        type FullyAnnotatedGame = typeof gamesWithXs[0][0];
+
         // Graphable games from all players, flattened into a single sorted array.
-        const allGames = gamesWithXs.reduce((a, b) => a.concat(b)).sort((a, b) => +a.date - +b.date);
+        const allGames = gamesWithXs.reduce((a, b) => a.concat(b)).sort((a, b) => this.compareGamesChronologically(a.data, b.data));
         const allXs: number[] = [];
         for (let x = 0; x < allGames.length; x++) {
             allGames[x].x = x;
@@ -162,7 +173,7 @@ renderGraph(gameLists: PlayerGameList[]): void {
 
         // The game data, which will be populated below.
         const plotlyData = [] as {
-            games: typeof gamesWithXs[0],
+            games: FullyAnnotatedGame[],
             x: number[],
             y: number[],
             name: string,
@@ -263,9 +274,9 @@ renderGraph(gameLists: PlayerGameList[]): void {
             const playerName = playerNames[playerIndex];
             const games = gamesWithXs[playerIndex];
 
-            let lastGame: typeof gamesWithXs[0][0] = null;
+            let lastGame: FullyAnnotatedGame = null;
             for (const game of games) {
-                if (lastGame && lastGame.x < game.x - 1) {
+                if (lastGame && (lastGame.x < game.x - 1)) {
                     // If we're not immediately following the last game,
                     // project its SR value forward to x - 1 so this game
                     // only takes the typical amount of x-space (1).
@@ -276,12 +287,12 @@ renderGraph(gameLists: PlayerGameList[]): void {
                 lineXs.push(game.x);
                 lineSRs.push(game.sr);
 
-                dotXs.push(game.x);
-                dotSRs.push(game.sr);
                 let labelPrefix = '';
                 if (game.srWasUnknownReason) {
-                    labelPrefix = `SR estimated, unknown due to ${game.srWasUnknownReason}<br>`;
+                    labelPrefix = `SR estimated (${game.srWasUnknownReason})<br>`;
                 }
+                dotXs.push(game.x);
+                dotSRs.push(game.sr);
                 dotLabels.push(`${labelPrefix}${game.data.result} - ${game.data.map}`);
 
                 lastGame = game;
@@ -322,7 +333,7 @@ renderGraph(gameLists: PlayerGameList[]): void {
                 }
             });
 
-            let runOfUnknownSRGames: null | typeof games = [];
+            let runOfUnknownSRGames: null | FullyAnnotatedGame[] = [];
             const outlineRun = () => {
                 let minSR = 5000;
                 let maxSR = 0;
@@ -349,6 +360,7 @@ renderGraph(gameLists: PlayerGameList[]): void {
                             width: 0,
                             color: color,
                         },
+                        layer: 'below',
                         fillcolor: game.srWasUnknownReason == 'placement' ? 'rgba(0, 127, 255, 0.25)' : 'rgba(255, 0, 0, 0.125)',
                     });
                 }
@@ -454,14 +466,14 @@ renderGraph(gameLists: PlayerGameList[]): void {
             if (!data.points[0].data.overtrackGames) {
                 return;
             }
-            const game:Game = data.points[0].data.overtrackGames[data.points[0].pointNumber];
-            if (!game.viewable) {
+            const game: FullyAnnotatedGame = data.points[0].data.overtrackGames[data.points[0].pointNumber];
+            if (!game.data.viewable) {
                 return;
             }
             if (data.event.ctrlKey){
-                window.open('./game/' + game.key);
+                window.open('./game/' + game.data.key);
             } else {
-                this.router.navigate(['/game/' + game.key]);
+                this.router.navigate(['/game/' + game.data.key]);
             }
         });
 
@@ -491,11 +503,11 @@ renderGraph(gameLists: PlayerGameList[]): void {
         const filled = games.map(game => (Object.assign({}, game)));
 
         const srPerMatch = 25;
-        const delta = (r: typeof Game.prototype.result) => {
+        const delta = (r: typeof Game.prototype.result, winCoefficient: number = 1.0, lossCoefficient: number = 1.0) => {
             if (r == 'WIN') {
-                return +srPerMatch;
+                return +srPerMatch * winCoefficient;
             } else if (r == 'LOSS') {
-                return -srPerMatch
+                return -srPerMatch * lossCoefficient;
             } else if (r == 'DRAW') {
                 return 0;
             } else {
@@ -529,8 +541,8 @@ renderGraph(gameLists: PlayerGameList[]): void {
 
         const unknownSegments: {
             // the anchoring start and end SRs, if known.
-            start: number|null,
-            end: number|null,
+            start: number|null, // the SR *before/excluding* the first game
+            end: number|null, // the SR *after/including* the last game
             games: T[][], // multiple games together are ties, merged for this
         }[] = [];
 
@@ -570,32 +582,81 @@ renderGraph(gameLists: PlayerGameList[]): void {
         }
         
         for (const unknown of unknownSegments) {
+            if (unknown.games.length == 0) {
+                // shouldn't happen.
+                continue;
+            }
+
+            if (!unknown.start && !unknown.end) {
+                // We have nothing to anchor an estimate at, so these remain unknown.
+                continue;
+            }
+
+            // The amount we predict these games will change the SR.
             let naturalTotalDelta = 0;
+            let wins = 0;
+            let losses = 0;
+            let draws = 0;
+            let others = 0;
             for (const entry of unknown.games) {
-                naturalTotalDelta += delta(entry[0].data.result) || 0;
+                const result = entry[0].data.result;
+                naturalTotalDelta += delta(result) || 0;
+                if (result == 'WIN') wins++;
+                else if (result == 'LOSS') losses++;
+                else if (result == 'DRAW') draws++;
+                else others++;
             }
 
-            let totalDelta = naturalTotalDelta;
-            let fakeDeltaEach = 0;
-            if (unknown.start && unknown.end) {
-                totalDelta = unknown.end - unknown.start;
-                fakeDeltaEach = (totalDelta - naturalTotalDelta) / (unknown.games.length + 1);
-            }
+            if (!unknown.start || !unknown.end) {
+                // only one end is anchored, so we can just extrapolate without scaling.
+                if (!unknown.start) unknown.start = unknown.end - naturalTotalDelta;
+                if (!unknown.end) unknown.end = unknown.start + naturalTotalDelta;
 
-            if (!unknown.start) {
-                if (unknown.end) {
-                    unknown.start = unknown.end - totalDelta;
-                } else {
-                    // we have no idea what SR this segment is at. give up.
-                    continue;
+                let sr = unknown.start;
+                for (const games of unknown.games) {
+                    sr += delta(games[0].data.result) || 0;
+                    for (const game of games) {
+                        game.sr = Math.round(sr);
+                    }
                 }
+
+                continue;
             }
 
+            // both ends are anchored, so we need to hit this target delta.
+            const knownDelta = unknown.end - unknown.start;
+
+            if (wins > 0 && losses > 0) {
+                // scale either wins or losses to be worth more in order to hit target.
+                let winCoefficient = 1.0;
+                let lossCoefficient = 1.0;
+                const lossesNaturalValue = - losses * srPerMatch;
+                const shortfall = knownDelta - naturalTotalDelta;
+                if (shortfall > 0) {
+                    winCoefficient += shortfall / wins / srPerMatch;
+                } else if (shortfall < 0) {
+                    lossCoefficient += -shortfall / losses / srPerMatch;
+                }
+
+                let sr = unknown.start;
+                for (const games of unknown.games) {
+                    sr += delta(games[0].data.result, winCoefficient, lossCoefficient) || 0;
+                    for (const game of games) {
+                        game.sr = Math.round(sr);
+                    }
+                }
+
+                continue;
+            }
+
+            // just put them in line from start to end, except for draws.
             let sr = unknown.start;
-            for (const entry of unknown.games) {
-                sr += (delta(entry[0].data.result) || 0) + fakeDeltaEach;
-                for (const e of entry) {
-                    e.sr = Math.floor(sr);
+            for (const games of unknown.games) {
+                if (games[0].data.result != 'DRAW') {
+                    sr += knownDelta / (unknown.games.length - draws);
+                }
+                for (const game of games) {
+                    game.sr = Math.round(sr);
                 }
             }
         }
