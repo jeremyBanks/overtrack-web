@@ -154,6 +154,7 @@ export class GamesGraphComponent implements OnInit {
         let lastDateFormatted: string|null = null;
         const allDates = allGames.map(game => {
             const dateFormatted = this.formatDate(game.date);
+
             if (dateFormatted != lastDateFormatted) {
                 lastDateFormatted = dateFormatted;
 
@@ -199,7 +200,7 @@ export class GamesGraphComponent implements OnInit {
 
                 ticks: '',
                 showgrid: true,
-                gridcolor: 'rgba(0, 0, 0, 0.2)',
+                gridcolor: 'rgba(0, 0, 0, 0.15)',
                 zeroline: false,
                 fixedrange: false,
                 range: [NaN, NaN] as [number, number]
@@ -207,8 +208,11 @@ export class GamesGraphComponent implements OnInit {
             yaxis: {
                 fixedrange: true,
                 range: [NaN, NaN] as [number, number],
-                nticks: 3,
-                side: 'right'
+                gridcolor: 'rgba(0, 0, 0, 1.0)',
+                side: 'right',
+                tickmode: 'array',
+                ticktext: [500, 625, 750, 875, 1000, 1125, 1250, 1375, 1500, 1625, 1750, 1875, 2000, 2125, 2250, 2375, 2500, 2625, 2750, 2875, 3000, 3125, 3250, 3375, 3500, 3625, 3750, 3875, 4000, 4125, 4250, 4375, 4500, 4625, 4750, 4875, 5000].map((n, i) => i % 2 == 0 ? String(n) : ''),
+                tickvals: [500, 625, 750, 875, 1000, 1125, 1250, 1375, 1500, 1625, 1750, 1875, 2000, 2125, 2250, 2375, 2500, 2625, 2750, 2875, 3000, 3125, 3250, 3375, 3500, 3625, 3750, 3875, 4000, 4125, 4250, 4375, 4500, 4625, 4750, 4875, 5000],
             },
             overlaying: false,
             margin: {
@@ -389,7 +393,6 @@ export class GamesGraphComponent implements OnInit {
         const getLayout = (left: number, right: number, enabledTraces?: Array<string> | null): {
             'xaxis.range': [number, number],
             'yaxis.range': [number, number],
-            'xaxis.tickvals': number[],
             'xaxis.ticktext': string[],
         } => {
             let range = right - left;
@@ -459,7 +462,6 @@ export class GamesGraphComponent implements OnInit {
                 'xaxis.range': [left, right],
                 'yaxis.range': [minSR - yPadding, maxSR + yPadding],
                 'xaxis.ticktext': ticktext,
-                'xaxis.tickvals': allDates.map(d => d.x),
             }
         };
 
@@ -469,9 +471,8 @@ export class GamesGraphComponent implements OnInit {
         const initialLayout = getLayout(intitialLeft, initialRight, null);
         plotlyLayout.xaxis.range = initialLayout['xaxis.range'];
         plotlyLayout.yaxis.range = initialLayout['yaxis.range'];
-        plotlyLayout.xaxis.tickvals = initialLayout['xaxis.tickvals'];
         plotlyLayout.xaxis.ticktext = initialLayout['xaxis.ticktext'];
-
+        plotlyLayout.xaxis.tickvals = allDates.map(d => d.x);
         // Find our target element and let TypeScript know about the properties Plotly will add.
         const plotlyElement = document.getElementById('sr-graph') as HTMLElement & {
             on: (eventName: string, callback: (eventData: {
