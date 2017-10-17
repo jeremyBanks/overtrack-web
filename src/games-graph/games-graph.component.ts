@@ -152,19 +152,12 @@ export class GamesGraphComponent implements OnInit {
 
         // Find all unique dates from all games.
         let lastDateFormatted: string|null = null;
-        let lastSeason: string|null = null;
         const allDates = allGames.map(game => {
             const dateFormatted = this.formatDate(game.date);
-            const season = this.gamesListService.getSeason(+game.date / 1000);
-           
             if (dateFormatted != lastDateFormatted) {
-                const specialLabel = (season != lastSeason) ? season : null;
-
                 lastDateFormatted = dateFormatted;
-                lastSeason = season;
 
                 return {
-                    specialLabel: specialLabel,
                     date: game.date,
                     formatted: dateFormatted,
                     x: game.x
@@ -447,22 +440,14 @@ export class GamesGraphComponent implements OnInit {
                 maxSR = 5000;
             }
 
-            // We include labels for special dates, and approximately 15 other dates in the currently-visible range.
+            // Sample approximately 15 dates currently in-range and label them on the x-axis.
             const datesInRange = allDates.filter(d => d.x >= left && d.x <= right);
             const nInM = Math.max(1, Math.round(datesInRange.length / 15));
             const ticktext: string[] = [];
-            let ticksTowardsNext = 0;
+            let i = 0;
             for (const d of allDates) {
-                if (d.specialLabel) {
-                    ticksTowardsNext = 0;
-                    ticktext.push('🔵 ' + d.specialLabel);
-                    continue;
-                }
-
                 if (d.x >= left && d.x <= right) {
-                    ticksTowardsNext++;
-                    if (ticksTowardsNext >= nInM) {
-                        ticksTowardsNext = 0;
+                    if (i++ % nInM == 0) {
                         ticktext.push(d.formatted);
                         continue;
                     }
