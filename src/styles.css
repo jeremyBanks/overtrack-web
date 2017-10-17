@@ -787,3 +787,7 @@ svg {
     /* give a bit more room for overflowing x-axis labels */
     margin-bottom: 20px;
 }
+
+#sr-graph.point-hovered .draglayer rect {
+    cursor: pointer;
+}

@@ -167,9 +167,6 @@ export class GamesGraphComponent implements OnInit {
             }
         }).filter(Boolean);
 
-        // We should probably reference this element in a more Angular way.
-        const plotlyElement = document.getElementById('sr-graph');
-
         // The game data, which will be populated below.
         const plotlyData = [] as {
             games: FullyAnnotatedGame[],
@@ -475,37 +472,56 @@ export class GamesGraphComponent implements OnInit {
         plotlyLayout.xaxis.tickvals = initialLayout['xaxis.tickvals'];
         plotlyLayout.xaxis.ticktext = initialLayout['xaxis.ticktext'];
 
-        // Initial Plotly render.
+        // Find our target element and let TypeScript know about the properties Plotly will add.
+        const plotlyElement = document.getElementById('sr-graph') as HTMLElement & {
+            on: (eventName: string, callback: (eventData: {
+                points?: {data: any, pointNumber: number}[],
+                event?: MouseEvent,
+                source?: string,
+            }) => void) => void,
+            data: any,
+            layout: any
+        };
+
+        // Initial Plotly render and element initialization.
         Plotly.newPlot(plotlyElement, plotlyData, plotlyLayout, plotlyConfig);
 
-        (plotlyElement as any).on('plotly_click', data => {
-            if (data.points.length != 1) {
-                return;
-            }
-            if (!data.points[0].data.overtrackGames) {
-                return;
-            }
-            const game: FullyAnnotatedGame = data.points[0].data.overtrackGames[data.points[0].pointNumber];
-            if (!game.data.viewable) {
-                return;
-            }
-            if (data.event.ctrlKey){
+        plotlyElement.on('plotly_click', eventData => {
+            if (eventData.points.length != 1) return;
+            if (!eventData.points[0].data.overtrackGames) return;
+            const game: FullyAnnotatedGame = eventData.points[0].data.overtrackGames[eventData.points[0].pointNumber];
+            if (!game.data.viewable) return;
+
+            if (eventData.event.ctrlKey){
                 window.open('./game/' + game.data.key);
             } else {
                 this.router.navigate(['/game/' + game.data.key]);
             }
         });
 
-        (plotlyElement as any).on('plotly_relayout', eventdata => {  
+        plotlyElement.on('plotly_hover', eventData => {
+            if (eventData.points.length != 1) return;
+            if (!eventData.points[0].data.overtrackGames) return;
+            const game: FullyAnnotatedGame = eventData.points[0].data.overtrackGames[eventData.points[0].pointNumber];
+            if (!game.data.viewable) return;
+
+            plotlyElement.classList.add('point-hovered');
+        });
+
+        plotlyElement.on('plotly_unhover', eventData => {
+            plotlyElement.classList.remove('point-hovered');
+        });
+
+        plotlyElement.on('plotly_relayout', eventData => {
             let eventSource = 'user';
-            if (eventdata['source']){
-                eventSource = eventdata['source'];
+            if (eventData.source){
+                eventSource = eventData.source;
             }
 
-            let left: number = eventdata['xaxis.range[0]'];
-            let right: number = eventdata['xaxis.range[1]'];
+            let left: number = eventData['xaxis.range[0]'];
+            let right: number = eventData['xaxis.range[1]'];
             if (eventSource == 'user' && right != undefined && left != undefined){
-                const enabledTraces: Array<string> = (plotlyElement as any).data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
+                const enabledTraces: Array<string> = plotlyElement.data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
 
                 Plotly.relayout(plotlyElement, {
                     source: 'constrainZoom',
@@ -514,17 +530,16 @@ export class GamesGraphComponent implements OnInit {
             }
         });
 
-        (plotlyElement as any).on('plotly_restyle', eventdata => {
-            let left: number = (plotlyElement as any).layout.xaxis.range[0];
-            let right: number = (plotlyElement as any).layout.xaxis.range[1];
-            const enabledTraces: Array<string> = (plotlyElement as any).data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
+        plotlyElement.on('plotly_restyle', eventData => {
+            let left: number = plotlyElement.layout.xaxis.range[0];
+            let right: number = plotlyElement.layout.xaxis.range[1];
+            const enabledTraces: Array<string> = plotlyElement.data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
 
             Plotly.relayout(plotlyElement, {
                 source: 'constrainZoom',
                 ...getLayout(left, right, enabledTraces)
             });
         });
-
     }
     
     // Attaches an estimated SR to games with unknown SR, where possible.
@@ -610,7 +625,7 @@ export class GamesGraphComponent implements OnInit {
             }
             lastEntry = entry;
         }
-        
+
         for (const unknown of unknownSegments) {
             if (unknown.games.length == 0) {
                 // shouldn't happen.
