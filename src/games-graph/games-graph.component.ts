@@ -378,6 +378,9 @@ renderGraph(gameLists: PlayerGameList[]): void {
         // Add the shapes/outlines to the Plotly layout.
         plotlyLayout.shapes.push(...plotlyLayoutShapes);
 
+        // Show the legend only if there are multiple players.
+        plotlyLayout.showlegend = playerIndicies.length > 1;
+
         // Define limits for panning/zooming.
         const minLeft = -2;
         const maxRight = allXs[allXs.length - 1] + 2;
