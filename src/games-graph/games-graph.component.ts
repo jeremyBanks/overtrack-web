@@ -154,8 +154,10 @@ export class GamesGraphComponent implements OnInit {
         let lastDateFormatted: string|null = null;
         const allDates = allGames.map(game => {
             const dateFormatted = this.formatDate(game.date);
+
             if (dateFormatted != lastDateFormatted) {
                 lastDateFormatted = dateFormatted;
+
                 return {
                     date: game.date,
                     formatted: dateFormatted,
@@ -201,7 +203,7 @@ export class GamesGraphComponent implements OnInit {
 
                 ticks: '',
                 showgrid: true,
-                gridcolor: 'rgba(0, 0, 0, 0.2)',
+                gridcolor: 'rgba(0, 0, 0, 0.15)',
                 zeroline: false,
                 fixedrange: false,
                 range: [NaN, NaN] as [number, number]
@@ -209,8 +211,11 @@ export class GamesGraphComponent implements OnInit {
             yaxis: {
                 fixedrange: true,
                 range: [NaN, NaN] as [number, number],
-                nticks: 3,
-                side: 'right'
+                gridcolor: 'rgba(0, 0, 0, 1.0)',
+                side: 'right',
+                tickmode: 'array',
+                ticktext: [500, 625, 750, 875, 1000, 1125, 1250, 1375, 1500, 1625, 1750, 1875, 2000, 2125, 2250, 2375, 2500, 2625, 2750, 2875, 3000, 3125, 3250, 3375, 3500, 3625, 3750, 3875, 4000, 4125, 4250, 4375, 4500, 4625, 4750, 4875, 5000].map((n, i) => i % 2 == 0 ? String(n) : ''),
+                tickvals: [500, 625, 750, 875, 1000, 1125, 1250, 1375, 1500, 1625, 1750, 1875, 2000, 2125, 2250, 2375, 2500, 2625, 2750, 2875, 3000, 3125, 3250, 3375, 3500, 3625, 3750, 3875, 4000, 4125, 4250, 4375, 4500, 4625, 4750, 4875, 5000],
             },
             overlaying: false,
             margin: {
@@ -241,16 +246,6 @@ export class GamesGraphComponent implements OnInit {
             displaylogo: false,
             scrollZoom: true
         };
-
-        // Sample the number of X axis tick values (i.e. dates) to be around 15.
-        const nInM = Math.max(1, Math.round(allDates.length / 14));
-        const sampledDates = allDates.filter((e, i) => i % nInM == 0);
-
-        // Add x ticks to the Plotly layout data.
-        for (const date of sampledDates) {
-            plotlyLayout.xaxis.tickvals.push(date.x);
-            plotlyLayout.xaxis.ticktext.push(date.formatted);
-        }
 
         // Generate dot and line serises for each player.
         const plotlyDataLines: any[] = [];
@@ -396,8 +391,13 @@ export class GamesGraphComponent implements OnInit {
         const maxRight = allXs[allXs.length - 1] + 2;
         const maxRange = maxRight - minLeft;
         const minRange = 2;
-        // Gets the closest legal X range and computed Y range for an input X range.
-        const getRanges = (left: number, right: number, enabledTraces: Array<string> | null): {xRange: [number, number], yRange: [number, number]} => {
+
+        // Returns layout properties that need to be updated to reflect a target X range.
+        const getLayout = (left: number, right: number, enabledTraces?: Array<string> | null): {
+            'xaxis.range': [number, number],
+            'yaxis.range': [number, number],
+            'xaxis.ticktext': string[],
+        } => {
             let range = right - left;
 
             if (range > maxRange) {
@@ -424,9 +424,10 @@ export class GamesGraphComponent implements OnInit {
             let maxSR = 0;
 
             for (const game of allGames) {
-                if (enabledTraces && enabledTraces.indexOf(game.data.player) == -1){
+                if (enabledTraces && enabledTraces.indexOf(game.data.player) == -1) {
                     continue;
                 }
+
                 if (game.x >= left && game.x <= right) {
                     if (game.sr < minSR) {
                         minSR = game.sr;
@@ -442,20 +443,40 @@ export class GamesGraphComponent implements OnInit {
                 maxSR = 5000;
             }
 
+            // Sample approximately 15 dates currently in-range and label them on the x-axis.
+            const datesInRange = allDates.filter(d => d.x >= left && d.x <= right);
+            const nInM = Math.max(1, Math.round(datesInRange.length / 15));
+            const ticktext: string[] = [];
+            let i = 0;
+            for (const d of allDates) {
+                if (d.x >= left && d.x <= right) {
+                    if (i++ % nInM == 0) {
+                        ticktext.push(d.formatted);
+                        continue;
+                    }
+                }
+
+                ticktext.push('');
+            }
+
             const yPadding = 25;
 
             return {
-                xRange: [left, right],
-                yRange: [minSR - yPadding, maxSR + yPadding],
+                'xaxis.range': [left, right],
+                'yaxis.range': [minSR - yPadding, maxSR + yPadding],
+                'xaxis.ticktext': ticktext,
             }
         };
 
         // Set the initial range to include the last 100 games.
         const intitialLeft = allXs[Math.max(allXs.length - initialGamesVisible, 0)] - 0.5;
         const initialRight = allXs[allXs.length - 1] + 1;
-        const initialRanges = getRanges(intitialLeft, initialRight, null);
-        plotlyLayout.xaxis.range = initialRanges.xRange;
-        plotlyLayout.yaxis.range = initialRanges.yRange;
+        const initialLayout = getLayout(intitialLeft, initialRight, null);
+        plotlyLayout.xaxis.range = initialLayout['xaxis.range'];
+        plotlyLayout.yaxis.range = initialLayout['yaxis.range'];
+        plotlyLayout.xaxis.ticktext = initialLayout['xaxis.ticktext'];
+
+        plotlyLayout.xaxis.tickvals = allDates.map(d => d.x);
 
         // Initial Plotly render.
         Plotly.newPlot(plotlyElement, plotlyData, plotlyLayout, plotlyConfig);
@@ -478,7 +499,23 @@ export class GamesGraphComponent implements OnInit {
             }
         });
 
-        (plotlyElement as any).on('plotly_relayout', eventdata => {  
+        // We only want our expensive layout changes to occur after this many ms have passed between events.
+        const debounceTime = 250;
+        let relayoutTimeout = null;
+        const requestRelayout = (left: number, right: number) => {
+            if (relayoutTimeout) clearTimeout(relayoutTimeout);
+            
+            // relayoutTimeout = setTimeout(() => {
+                const enabledTraces: Array<string> = (plotlyElement as any).data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
+
+                Plotly.relayout(plotlyElement, {
+                    source: 'constrainZoom',
+                    ...getLayout(left, right, enabledTraces)
+                });
+            // }, debounceTime);
+        };
+
+        (plotlyElement as any).on('plotly_relayout', eventdata => { 
             let eventSource = 'user';
             if (eventdata['source']){
                 eventSource = eventdata['source'];
@@ -487,29 +524,18 @@ export class GamesGraphComponent implements OnInit {
             let left: number = eventdata['xaxis.range[0]'];
             let right: number = eventdata['xaxis.range[1]'];
             if (eventSource == 'user' && right != undefined && left != undefined){
-                const enabledTraces: Array<string> = (plotlyElement as any).data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
-                const {xRange, yRange} = getRanges(left, right, enabledTraces);
-
-                Plotly.relayout(plotlyElement, {
-                    'source': 'constrainZoom',
-                    'xaxis.range': xRange,
-                    'yaxis.range': yRange
-                });
+                console.log('relayouting', left, right)
+                requestRelayout(left, right);
             }
         });
 
         (plotlyElement as any).on('plotly_restyle', eventdata => {
             let left: number = (plotlyElement as any).layout.xaxis.range[0];
             let right: number = (plotlyElement as any).layout.xaxis.range[1];
-            const enabledTraces: Array<string> = (plotlyElement as any).data.filter(e => e.showlegend == false && e.visible != 'legendonly').map(e => e.name);
-            const {xRange, yRange} = getRanges(left, right, enabledTraces);
-
-            Plotly.relayout(plotlyElement, {
-                'source': 'constrainZoom',
-                'xaxis.range': xRange,
-                'yaxis.range': yRange
-            });
+            console.log('restyling', left, right)
+            requestRelayout(left, right);
         });
+
 
     }
     
