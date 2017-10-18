@@ -150,24 +150,6 @@ export class GamesGraphComponent implements OnInit {
             allTimestamps.push(+allGames[x].date);
         }
 
-        // Find all unique dates from all games.
-        let lastDateFormatted: string|null = null;
-        const allDates = allGames.map(game => {
-            const dateFormatted = this.formatDate(game.date);
-
-            if (dateFormatted != lastDateFormatted) {
-                lastDateFormatted = dateFormatted;
-
-                return {
-                    date: game.date,
-                    formatted: dateFormatted,
-                    x: game.x
-                }
-            } else {
-                return null;
-            }
-        }).filter(Boolean);
-
         // The game data, which will be populated below.
         const plotlyData = [] as {
             games: FullyAnnotatedGame[],
@@ -194,11 +176,11 @@ export class GamesGraphComponent implements OnInit {
             xaxis: {
                 title: '',
 
-                tickmode: 'array',
-                ticktext: [] as string[],
-                tickvals: [] as number[],
-
                 ticks: '',
+                showticklabels: false,
+                tick0: 1000 * 60 * 60 * +4,
+                dtick: 1000 * 60 * 60 * 24,
+                
                 showgrid: true,
                 gridcolor: 'rgba(0, 0, 0, 0.15)',
                 zeroline: false,
@@ -390,7 +372,6 @@ export class GamesGraphComponent implements OnInit {
         const getLayout = (left: number, right: number, enabledTraces?: Array<string> | null): {
             'xaxis.range': [number, number],
             'yaxis.range': [number, number],
-            'xaxis.ticktext': string[],
         } => {
             let range = right - left;
 
@@ -436,28 +417,11 @@ export class GamesGraphComponent implements OnInit {
                 maxSR = 5000;
             }
 
-            // Sample approximately 15 dates currently in-range and label them on the x-axis.
-            const datesInRange = allDates.filter(d => d.x >= left && d.x <= right);
-            const nInM = Math.max(1, Math.round(datesInRange.length / 15));
-            const ticktext: string[] = [];
-            let i = 0;
-            for (const d of allDates) {
-                if (d.x >= left && d.x <= right) {
-                    if (i++ % nInM == 0) {
-                        ticktext.push(d.formatted);
-                        continue;
-                    }
-                }
-
-                ticktext.push('');
-            }
-
             const yPadding = 25;
 
             return {
                 'xaxis.range': [left, right],
                 'yaxis.range': [minSR - yPadding, maxSR + yPadding],
-                'xaxis.ticktext': ticktext,
             }
         };
 
@@ -467,8 +431,6 @@ export class GamesGraphComponent implements OnInit {
         const initialLayout = getLayout(intitialLeft, initialRight, null);
         plotlyLayout.xaxis.range = initialLayout['xaxis.range'];
         plotlyLayout.yaxis.range = initialLayout['yaxis.range'];
-        plotlyLayout.xaxis.ticktext = initialLayout['xaxis.ticktext'];
-        plotlyLayout.xaxis.tickvals = allDates.map(d => +d.date);
 
         // Find our target element and let TypeScript know about the properties Plotly will add.
         const plotlyElement = document.getElementById('sr-graph') as HTMLElement & {
