@@ -144,10 +144,10 @@ export class GamesGraphComponent implements OnInit {
 
         // Graphable games from all players, flattened into a single sorted array.
         const allGames = gamesWithXs.reduce((a, b) => a.concat(b)).sort((a, b) => this.compareGamesChronologically(a.data, b.data));
-        const allXs: number[] = [];
+        const allTimestamps: number[] = [];
         for (let x = 0; x < allGames.length; x++) {
             allGames[x].x = x;
-            allXs.push(x);
+            allTimestamps.push(+allGames[x].date);
         }
 
         // Find all unique dates from all games.
@@ -266,22 +266,19 @@ export class GamesGraphComponent implements OnInit {
 
             let lastGame: FullyAnnotatedGame = null;
             for (const game of games) {
-                if (lastGame && (lastGame.x < game.x - 1)) {
-                    // If we're not immediately following the last game,
-                    // project its SR value forward to x - 1 so this game
-                    // only takes the typical amount of x-space (1).
-                    lineXs.push(game.x - 1);
+                if (lastGame) {
+                    lineXs.push(+game.date - 1);
                     lineSRs.push(lastGame.sr);
                 }
 
-                lineXs.push(game.x);
+                lineXs.push(+game.date);
                 lineSRs.push(game.sr);
 
                 let labelPrefix = '';
                 if (game.srWasUnknownReason) {
                     labelPrefix = `SR estimated (${game.srWasUnknownReason})<br>`;
                 }
-                dotXs.push(game.x);
+                dotXs.push(+game.date);
                 dotSRs.push(game.sr);
                 dotLabels.push(`${labelPrefix}${game.data.result} - ${game.data.map}`);
 
@@ -290,7 +287,7 @@ export class GamesGraphComponent implements OnInit {
 
             // Project SR line out beyond the end of the graph with latest value.
             lineSRs.push(lineSRs[lineSRs.length - 1]);
-            lineXs.push(allXs[allXs.length - 1] + 1024);
+            lineXs.push(allTimestamps[allTimestamps.length - 1]);
 
             plotlyDataLines.push({
                 showlegend: true,
@@ -342,8 +339,8 @@ export class GamesGraphComponent implements OnInit {
                         type: 'rect',
                         xref: 'x',
                         yref: 'y',
-                        x0: game.x - 0.5,
-                        x1: game.x + 0.5,
+                        x0: +game.date - 0.5,
+                        x1: +game.date + 0.5,
                         y0: minSR - 25,
                         y1: maxSR + 25,
                         line: {
@@ -384,8 +381,8 @@ export class GamesGraphComponent implements OnInit {
         plotlyLayout.showlegend = playerIndicies.length > 1;
 
         // Define limits for panning/zooming.
-        const minLeft = -2;
-        const maxRight = allXs[allXs.length - 1] + 2;
+        const minLeft = allTimestamps[0] - 2;
+        const maxRight = allTimestamps[allTimestamps.length - 1] + 2;
         const maxRange = maxRight - minLeft;
         const minRange = 2;
 
@@ -424,8 +421,7 @@ export class GamesGraphComponent implements OnInit {
                 if (enabledTraces && enabledTraces.indexOf(game.data.player) == -1) {
                     continue;
                 }
-
-                if (game.x >= left && game.x <= right) {
+                if (+game.date >= left && +game.date <= right) {
                     if (game.sr < minSR) {
                         minSR = game.sr;
                     }
@@ -466,13 +462,14 @@ export class GamesGraphComponent implements OnInit {
         };
 
         // Set the initial range to include the last 100 games.
-        const intitialLeft = allXs[Math.max(allXs.length - initialGamesVisible, 0)] - 0.5;
-        const initialRight = allXs[allXs.length - 1] + 1;
+        const intitialLeft = allTimestamps[Math.max(allTimestamps.length - initialGamesVisible, 0)] - 0.5;
+        const initialRight = allTimestamps[allTimestamps.length - 1] + 1;
         const initialLayout = getLayout(intitialLeft, initialRight, null);
         plotlyLayout.xaxis.range = initialLayout['xaxis.range'];
         plotlyLayout.yaxis.range = initialLayout['yaxis.range'];
         plotlyLayout.xaxis.ticktext = initialLayout['xaxis.ticktext'];
-        plotlyLayout.xaxis.tickvals = allDates.map(d => d.x);
+        plotlyLayout.xaxis.tickvals = allDates.map(d => +d.date);
+
         // Find our target element and let TypeScript know about the properties Plotly will add.
         const plotlyElement = document.getElementById('sr-graph') as HTMLElement & {
             on: (eventName: string, callback: (eventData: {
@@ -558,8 +555,8 @@ export class GamesGraphComponent implements OnInit {
                 games = games.slice(-eventData['last']);
             }
 
-            const left = games[0].x - 0.5;
-            const right = games[games.length - 1].x + 0.5;
+            const left = +games[0].date - 0.5;
+            const right = +games[games.length - 1].date + 0.5;
 
             Plotly.relayout(plotlyElement, {
                 source: 'constrainZoom',
