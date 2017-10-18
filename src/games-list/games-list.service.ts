@@ -177,9 +177,15 @@ export class GamesListService {
         const PLACEMENT = null;
 
         let n = 0;
+        let lastDate = 0;
         const game = (sr: number|null, year: number, month: number, day: number, result: 'WIN' | 'LOSS' | 'DRAW' | 'UNKN' = 'UNKN', player: string):Game => {
             n++;
-            const d = new Date(year, month - 1, day, 12, n);
+            let d = new Date(year, month - 1, day, 9, n * 30);
+            if (+d > lastDate + 60 * 60 * 1000) {
+                n = 0;
+                d = new Date(year, month - 1, day, 9);
+            }
+            lastDate = +d;
             return {
                 startTime: d,
                 endTime: d,
