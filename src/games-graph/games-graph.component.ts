@@ -66,12 +66,10 @@ export class GamesGraphComponent implements OnInit {
     }
 
     formatDate(date: Date): string {
-        var days = ['Sun','Mon','Tues','Wed','Thurs','Fri','Sat'];
-        return days[date.getDay()] + ' ' + date.toLocaleDateString(undefined, {
-            year: '2-digit',
-            month: 'numeric',
+        return date.toLocaleDateString(undefined, {
+            year: 'numeric',
+            month: 'short',
             day: 'numeric'
-
         });
     }
 
