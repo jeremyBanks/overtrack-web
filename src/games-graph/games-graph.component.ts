@@ -145,9 +145,15 @@ export class GamesGraphComponent implements OnInit {
         // Graphable games from all players, flattened into a single sorted array.
         const allGames = gamesWithXs.reduce((a, b) => a.concat(b)).sort((a, b) => this.compareGamesChronologically(a.data, b.data));
         const allXs: number[] = [];
-        for (let x = 0; x < allGames.length; x++) {
-            allGames[x].x = x;
-            allXs.push(x);
+        let skips = 0;
+        for (let i = 0; i < allGames.length; i++) {
+            if (i > 0) {
+                const dTHours = (+allGames[i].date - +allGames[i - 1].date) / (1000 * 60 * 60);
+                skips += 4 * Math.max(Math.log(dTHours)/Math.log(10), 0);
+                console.log(skips);
+            }
+            allGames[i].x = i + skips;
+            allXs.push(allGames[i].x);
         }
 
         // Find all unique dates from all games.
