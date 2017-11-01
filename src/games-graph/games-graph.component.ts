@@ -7,7 +7,7 @@ import { Game } from '../game/game.service';
 
 declare var Plotly: any;
 
-type SRUnknownReason = null | 'placement' | 'unknown';
+type SRUnknownReason = null | 'placement' | 'off-season' | 'unknown';
 
 @Component({
     selector: 'games-graph',
@@ -105,18 +105,22 @@ export class GamesGraphComponent implements OnInit {
         // Data for each game, for each player.
         const unfilteredGames = gameLists.map(x => ({
             player: x.player,
-            games: x.list.slice().map(data => ({
-                data: data,
-                date: data.startTime,
-                sr: data.endSR || null,
-                srWasUnknownReason: (data.endSR ? null : data.rank == 'placement' ? 'placement' : 'unknown') as SRUnknownReason
-            })).sort((a, b) => this.compareGamesChronologically(a.data, b.data))
+            games: x.list.slice().map(data => {
+                const placement = data.rank === 'placement';
+                const offSeason = this.gamesListService.getSeason(Number(data.startTime) / 1000).toLowerCase().indexOf('off') > -1;
+                const reason: SRUnknownReason = placement ? 'placement' : offSeason ? 'off-season' : 'unknown';
+                return {
+                    data: data,
+                    date: data.startTime,
+                    sr: data.endSR || null,
+                    srWasUnknownReason: data.endSR ? null : reason
+                }}).sort((a, b) => this.compareGamesChronologically(a.data, b.data))
         }));
 
         // Estimate SR when possible for games that are missing it.
         const gamesWithEstimates = unfilteredGames.map(x => ({
             player: x.player,
-            games: this.fillUnknownSRs(x.games)
+            games: this.fillUnknownSRs(x.games),
         }));
 
         // Filter out games without an SR (even estimated), and players with fewer than two eligible games.
@@ -147,8 +151,7 @@ export class GamesGraphComponent implements OnInit {
         for (let i = 0; i < allGames.length; i++) {
             if (i > 0) {
                 const dTHours = (+allGames[i].date - +allGames[i - 1].date) / (1000 * 60 * 60);
-                skips += 4 * Math.max(Math.log(dTHours)/Math.log(10), 0);
-                console.log(skips);
+                skips += 4 * Math.max(Math.log(dTHours) / Math.log(10), 0);
             }
             allGames[i].x = i + skips;
             allXs.push(allGames[i].x);
@@ -159,7 +162,7 @@ export class GamesGraphComponent implements OnInit {
         const allDates = allGames.map(game => {
             const dateFormatted = this.formatDate(game.date);
 
-            if (dateFormatted != lastDateFormatted) {
+            if (dateFormatted !== lastDateFormatted) {
                 lastDateFormatted = dateFormatted;
 
                 return {
@@ -355,7 +358,10 @@ export class GamesGraphComponent implements OnInit {
                             color: color,
                         },
                         layer: 'below',
-                        fillcolor: game.srWasUnknownReason == 'placement' ? 'rgba(0, 127, 255, 0.25)' : 'rgba(255, 0, 0, 0.125)',
+                        fillcolor: {
+                            'placement': 'rgba(0, 127, 255, 0.25)',
+                            'off-season': 'rgba(255, 127, 0, 0.25)',
+                        }[game.srWasUnknownReason] || 'rgba(255, 0, 0, 0.125)',
                     });
                 }
             };
@@ -581,14 +587,18 @@ export class GamesGraphComponent implements OnInit {
         // Create our copies of each game item, to be filled below.
         const filled = games.map(game => (Object.assign({}, game)));
 
+        const drawOrOffSeason = (g: Game) => {
+            return g.result === 'DRAW' || this.gamesListService.getSeason((+g.startTime) / 1000).toLowerCase().indexOf('off') > -1;
+        }
+
         const srPerMatch = 25;
-        const delta = (r: typeof Game.prototype.result, winCoefficient: number = 1.0, lossCoefficient: number = 1.0) => {
-            if (r == 'WIN') {
-                return +srPerMatch * winCoefficient;
-            } else if (r == 'LOSS') {
-                return -srPerMatch * lossCoefficient;
-            } else if (r == 'DRAW') {
+        const delta = (r: Game, winCoefficient: number = 1.0, lossCoefficient: number = 1.0) => {
+            if (drawOrOffSeason(r)) {
                 return 0;
+            }else if (r.result == 'WIN') {
+                return +srPerMatch * winCoefficient;
+            } else if (r.result == 'LOSS') {
+                return -srPerMatch * lossCoefficient;
             } else {
                 return NaN;
             }
@@ -598,7 +608,7 @@ export class GamesGraphComponent implements OnInit {
         for (const entry of filled) {
             if (!entry.sr) {
                 if (entry.data.startSR) {
-                    const result = entry.data.startSR + delta(entry.data.result);
+                    const result = entry.data.startSR + delta(entry.data);
                     if (!isNaN(result)) {
                         entry.sr = result;
                     }
@@ -632,11 +642,11 @@ export class GamesGraphComponent implements OnInit {
             if (currentSegment) {
                 if (entry.sr) {
                     // end the current segment
-                    currentSegment.end = entry.data.startSR || entry.sr - (delta(entry.data.result) || 0);
+                    currentSegment.end = entry.data.startSR || entry.sr - (delta(entry.data) || 0);
                     currentSegment = null;
                 } else {
                     // continue current segment
-                    if (entry.data.result == 'DRAW') {
+                    if (drawOrOffSeason(entry.data)) {
                         // group with previous game
                         currentSegment.games[currentSegment.games.length - 1].push(entry);
                     } else {
@@ -679,10 +689,10 @@ export class GamesGraphComponent implements OnInit {
             let others = 0;
             for (const entry of unknown.games) {
                 const result = entry[0].data.result;
-                naturalTotalDelta += delta(result) || 0;
-                if (result == 'WIN') wins++;
-                else if (result == 'LOSS') losses++;
-                else if (result == 'DRAW') draws++;
+                naturalTotalDelta += delta(entry[0].data) || 0;
+                if (drawOrOffSeason(entry[0].data)) { draws++; }
+                else if (result === 'WIN') { wins++; }
+                else if (result === 'LOSS') { losses++; }
                 else others++;
             }
 
@@ -693,7 +703,7 @@ export class GamesGraphComponent implements OnInit {
 
                 let sr = unknown.start;
                 for (const games of unknown.games) {
-                    sr += delta(games[0].data.result) || 0;
+                    sr += delta(games[0].data) || 0;
                     for (const game of games) {
                         game.sr = Math.round(sr);
                     }
@@ -719,7 +729,7 @@ export class GamesGraphComponent implements OnInit {
 
                 let sr = unknown.start;
                 for (const games of unknown.games) {
-                    sr += delta(games[0].data.result, winCoefficient, lossCoefficient) || 0;
+                    sr += delta(games[0].data, winCoefficient, lossCoefficient) || 0;
                     for (const game of games) {
                         game.sr = Math.round(sr);
                     }
@@ -731,7 +741,7 @@ export class GamesGraphComponent implements OnInit {
             // just put them in line from start to end, except for draws.
             let sr = unknown.start;
             for (const games of unknown.games) {
-                if (games[0].data.result != 'DRAW') {
+                if (!drawOrOffSeason(games[0].data)) {
                     sr += knownDelta / (unknown.games.length - draws);
                 }
                 for (const game of games) {
