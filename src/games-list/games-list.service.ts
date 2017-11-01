@@ -676,7 +676,7 @@ export class GamesListService {
     }
 
     fetchGames(games: (value: Array<PlayerGameList>) => void, error: (error: any) => void){
-        if (this.games != null){
+        if (this.games != null) {
             games(this.games);
         } else {
             this.getGamesList().subscribe(
@@ -706,7 +706,7 @@ export class GamesListService {
             return 'Season 3'
         } else if (time < 1488193200) { // 28 Feb 2017
             return 'Off-Season 3-4';
-        } else if (time < 1496059200) { // 28 May 
+        } else if (time < 1496059200) { // 28 May
             return 'Season 4';
         } else if (time < 1496275199 - 60 * 60 * 24 * 2) { // 1 June 2017
             return 'Off-Season 4-5';
@@ -714,8 +714,12 @@ export class GamesListService {
             return 'Season 5';
         } else if (time < 1504224000) {
             return 'Off-Season 5-6';
+        } else if (time < 1509237000) { // October 29, 2017 @ 12:30:00 am UTC
+            return 'Season 6';
+        } else if (time < 1509494400) {
+            return 'Off-Season Season 6-7';
         } else {
-            return 'Season 6'
+            return 'Season 7';
         }
     }
 
